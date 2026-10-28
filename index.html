@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Inside Job</title>
+  </head>
+  <body>
+    <!-- ===================== CONTENEUR 3D ===================== -->
+    <div id="game"></div>
+
+    <!-- ===================== OVERLAY HTML (HUD + Écrans) ===================== -->
+    <div id="overlay">
+      <!-- HUD : visible pendant la partie -->
+      <div id="hud" class="hidden">
+        <!-- Timer -->
+        <div id="timer">90</div>
+        <!-- Objectif courant -->
+        <div id="hint">Trouve le dossier !</div>
+        <!-- Toast central pour les messages ("Objet trouvé !", ...) -->
+        <div id="toast" class="hidden"></div>
+        <!-- Réticule -->
+        <div id="crosshair"></div>
+        <!-- Info contrôles (discret) -->
+        <div id="controls-hint">ZQSD / WASD : bouger &nbsp;•&nbsp; Maj : courir &nbsp;•&nbsp; Souris : regarder &nbsp;•&nbsp; Échap : pause</div>
+      </div>
+
+      <!-- Écran unique (start / pause / fin) : son contenu est généré par ui.js -->
+      <div id="screen" class="screen">
+        <!-- Rempli dynamiquement par ui.js -->
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
