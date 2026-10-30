@@ -14,6 +14,7 @@ import { createWorld } from './world.js';
 import { Player } from './player.js';
 import { Mission } from './mission.js';
 import { createUI } from './ui.js';
+import { createMinimap } from './minimap.js';
 
 /* ------------------------------ Renderer ------------------------------ */
 const container = document.getElementById('game');
@@ -55,6 +56,8 @@ const mission = new Mission({
     ui.showEnd(won, mission.timeLeft, restartGame);
   },
 });
+
+const minimap = createMinimap(player, mission, world);
 
 /* =========================================================================
    Gestion des écrans / pointer lock
@@ -112,6 +115,7 @@ function animate() {
 
   player.update(dt);
   mission.update(dt);
+  minimap.draw();
 
   renderer.render(scene, camera);
 }
