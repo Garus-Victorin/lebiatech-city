@@ -1,57 +1,57 @@
 /* =========================================================================
-   player.js — Contrôles FPS (pointer lock, ZQSD/WASD, collisions AABB)
+   player.js — Contrôles type GTA (vue 3e personne, personnage visible)
    --------------------------------------------------------------------------
-   - Vue première personne, caméra collée à 1,65 m au-dessus du sol.
-   - Souris : regard (yaw/pitch) via Pointer Lock.
-   - Clavier : ZQSD (AZERTY) et WASD (QWERTY) détectés par `event.code`,
-     donc un seul fonctionne quel que soit le clavier.
-   - Déplacement : demi-cercle de vitesse + glissement (lerp) pour la douceur.
-   - Collisions : test AABB 2D (XZ) mur par mur, résolu axe par axe, ce qui
-     permet de "caler" le long des murs sans traverser ni vibrer.
+   - Personnage visible (bonhomme procédural) qui se déplace dans le monde.
+   - Caméra 3e personne : derrière et au-dessus du personnage, suit le yaw.
+   - Souris : yaw/pitch via Pointer Lock (la caméra tourne autour du personnage).
+   - Clavier : ZQSD/WASD + flèches, course avec Maj.
+   - Collisions AABB XZ inchangées (glissement le long des murs).
    ========================================================================= */
 
 import * as THREE from 'three';
 
-const EYE_HEIGHT = 1.65; // hauteur des yeux
-const RADIUS = 0.35; // rayon du joueur (marge par rapport aux murs)
-const WALK_SPEED = 4.2; // m/s
-const RUN_SPEED = 7.0; // m/s en courant (Maj)
-const ACCEL = 14; // vitesse d'accélération (lerp par seconde)
-const MOUSE_SENSITIVITY = 0.0022; // radians par pixel
-const MAX_PITCH = Math.PI / 2 - 0.05; // évite de se retourner la nuque
+const EYE_HEIGHT = 1.65;
+const RADIUS = 0.35;
+const WALK_SPEED = 4.2;
+const RUN_SPEED = 7.0;
+const ACCEL = 14;
+const MOUSE_SENSITIVITY = 0.0022;
+const MAX_PITCH = Math.PI / 2 - 0.05;
+
+// Caméra 3e personne
+const CAM_DISTANCE = 5.0;
+const CAM_HEIGHT = 2.6;
+const CAM_LERP = 12;
 
 export class Player {
-  /**
-   * @param {THREE.Camera} camera  caméra de rendu (perspective)
-   * @param {HTMLElement} domElement  élément qui reçoit le pointer lock (canvas)
-   * @param {Array} colliders  AABB issues de world.js ({minX,maxX,minZ,maxZ})
-   * @param {THREE.Vector3} spawn  point de départ
-   */
-  constructor(camera, domElement, colliders, spawn) {
+  constructor(camera, domElement, colliders, spawn, scene) {
     this.camera = camera;
     this.domElement = domElement;
     this.colliders = colliders;
     this.spawn = spawn.clone();
+    this.scene = scene;
 
-    // État du joueur
-    this.position = spawn.clone(); // position au sol (les pieds)
-    // Orientation initiale : le joueur regarde vers +X, donc vers l'intérieur
-    // du couloir depuis le point de départ (le mur ouest est derrière lui).
-    // rappel : direction avant = (-sin(yaw), -cos(yaw)) → yaw = -PI/2 avance vers +X.
+    this.position = spawn.clone();
     this.yaw = -Math.PI / 2;
     this.pitch = 0;
-    this.velocity = new THREE.Vector3(); // vitesse horizontale courante
-    this.enabled = false; // false = le joueur ne bouge pas (menu / pause / fin)
+    this.velocity = new THREE.Vector3();
+    this.enabled = false;
 
-    // Entrées
     this.keys = new Set();
     this.locked = false;
 
-    // Écouteurs
+    // Personnage visible
+    this.character = this._buildCharacter();
+    this.character.position.copy(this.position);
+    if (scene) scene.add(this.character);
+
+    // Animation de marche
+    this.walkPhase = 0;
+    this.moving = false;
+
     this._onMouseMove = (e) => this._handleMouseMove(e);
     this._onKeyDown = (e) => {
       this.keys.add(e.code);
-      // Empêche le défilement de la page avec espace/flèches
       if (['Space', 'ArrowUp', 'ArrowDown'].includes(e.code)) e.preventDefault();
     };
     this._onKeyUp = (e) => this.keys.delete(e.code);
@@ -59,8 +59,6 @@ export class Player {
       this.locked = document.pointerLockElement === this.domElement;
       if (this.onLockChange) this.onLockChange(this.locked);
     };
-    // Si le navigateur refuse le pointer lock (permission, geste absent...),
-    // on prévient l'orchestrateur pour afficher l'écran de pause/clic.
     this._onLockError = () => {
       this.locked = false;
       if (this.onLockChange) this.onLockChange(false);
@@ -72,24 +70,75 @@ export class Player {
     document.addEventListener('pointerlockchange', this._onLockChange);
     document.addEventListener('pointerlockerror', this._onLockError);
 
+    // Caméra lissée
+    this.camPos = new THREE.Vector3();
+    this._syncCamera(true);
+
     this.reset();
   }
 
-  /* Remet le joueur au point de départ (nouvelle partie) */
+  _buildCharacter() {
+    const group = new THREE.Group();
+    const skinMat = new THREE.MeshStandardMaterial({ color: 0xd9a066, roughness: 0.7 });
+    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x2b5fa8, roughness: 0.6 });
+    const legMat = new THREE.MeshStandardMaterial({ color: 0x1f2a3a, roughness: 0.7 });
+    const headMat = new THREE.MeshStandardMaterial({ color: 0xd9a066, roughness: 0.7 });
+
+    // Corps
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.7, 0.3), bodyMat);
+    body.position.y = 1.05;
+    body.castShadow = true;
+    group.add(body);
+
+    // Tête
+    const head = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.35, 0.35), headMat);
+    head.position.y = 1.55;
+    head.castShadow = true;
+    group.add(head);
+
+    // Bras
+    for (const s of [-1, 1]) {
+      const arm = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.6, 0.12), bodyMat);
+      arm.position.set(s * 0.32, 1.05, 0);
+      arm.castShadow = true;
+      group.add(arm);
+    }
+
+    // Jambes (pivots)
+    const leftLegPivot = new THREE.Group();
+    leftLegPivot.position.set(-0.12, 0.7, 0);
+    const leftLeg = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.7, 0.16), legMat);
+    leftLeg.position.y = -0.35;
+    leftLeg.castShadow = true;
+    leftLegPivot.add(leftLeg);
+    group.add(leftLegPivot);
+
+    const rightLegPivot = new THREE.Group();
+    rightLegPivot.position.set(0.12, 0.7, 0);
+    const rightLeg = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.7, 0.16), legMat);
+    rightLeg.position.y = -0.35;
+    rightLeg.castShadow = true;
+    rightLegPivot.add(rightLeg);
+    group.add(rightLegPivot);
+
+    group.userData = { leftLegPivot, rightLegPivot };
+    return group;
+  }
+
   reset() {
     this.position.copy(this.spawn);
     this.yaw = -Math.PI / 2;
     this.pitch = 0;
     this.velocity.set(0, 0, 0);
     this.keys.clear();
-    this._syncCamera();
+    this.walkPhase = 0;
+    if (this.character) this.character.position.copy(this.position);
+    this._syncCamera(true);
   }
 
-  /* Demande le pointer lock (appelé au clic sur "Jouer") */
   requestLock() {
     try {
       const result = this.domElement.requestPointerLock();
-      // Certains navigateurs renvoient une Promise (rejet = refus du lock)
       if (result && typeof result.catch === 'function') result.catch(() => this._onLockError());
     } catch (_e) {
       this._onLockError();
@@ -102,12 +151,11 @@ export class Player {
 
   _handleMouseMove(e) {
     if (!this.locked || !this.enabled) return;
-    this.yaw -= e.movementX * MOUSE_SENSITIVITY; // regarder à droite = tourner à droite
+    this.yaw -= e.movementX * MOUSE_SENSITIVITY;
     this.pitch -= e.movementY * MOUSE_SENSITIVITY;
     this.pitch = Math.max(-MAX_PITCH, Math.min(MAX_PITCH, this.pitch));
   }
 
-  /** true si la position (x,z) chevauche un collider (cercle joueur vs AABB) */
   _hits(x, z) {
     for (const c of this.colliders) {
       const nearX = Math.max(c.minX, Math.min(x, c.maxX));
@@ -122,45 +170,41 @@ export class Player {
   update(dt) {
     if (!this.enabled) {
       this._syncCamera();
+      if (this.character) this.character.position.copy(this.position);
       return;
     }
 
-    // --- 1. Direction voulue dans le repère du joueur (yaw) ---
     let inputX = 0;
     let inputZ = 0;
-    if (this.keys.has('KeyW') || this.keys.has('ArrowUp')) inputZ += 1; // avancer
-    if (this.keys.has('KeyS') || this.keys.has('ArrowDown')) inputZ -= 1; // reculer
-    if (this.keys.has('KeyD') || this.keys.has('ArrowRight')) inputX += 1; // strafe droite
-    if (this.keys.has('KeyA') || this.keys.has('ArrowLeft')) inputX -= 1; // strafe gauche
+    if (this.keys.has('KeyW') || this.keys.has('ArrowUp')) inputZ += 1;
+    if (this.keys.has('KeyS') || this.keys.has('ArrowDown')) inputZ -= 1;
+    if (this.keys.has('KeyD') || this.keys.has('ArrowRight')) inputX += 1;
+    if (this.keys.has('KeyA') || this.keys.has('ArrowLeft')) inputX -= 1;
 
     const running = this.keys.has('ShiftLeft') || this.keys.has('ShiftRight');
     const speed = running ? RUN_SPEED : WALK_SPEED;
 
-    // Normalisation pour qu'aller en diagonale ne soit pas plus rapide
     const len = Math.hypot(inputX, inputZ);
     let targetX = 0;
     let targetZ = 0;
     if (len > 0) {
       inputX /= len;
       inputZ /= len;
-      // Rotation du vecteur local (avant/gauche) selon le yaw de la caméra
       const sin = Math.sin(this.yaw);
       const cos = Math.cos(this.yaw);
       targetX = (inputX * cos - inputZ * sin) * speed;
       targetZ = (-inputX * sin - inputZ * cos) * speed;
     }
 
-    // --- 2. Lissage de la vitesse (accélération/décélération) ---
-    const t = 1 - Math.exp(-ACCEL * dt); // lerp indépendant du framerate
+    const t = 1 - Math.exp(-ACCEL * dt);
     this.velocity.x += (targetX - this.velocity.x) * t;
     this.velocity.z += (targetZ - this.velocity.z) * t;
 
-    // --- 3. Déplacement axe par axe (résolution de collision) ---
     const nextX = this.position.x + this.velocity.x * dt;
     if (!this._hits(nextX, this.position.z)) {
       this.position.x = nextX;
     } else {
-      this.velocity.x = 0; // impact : on annule la composante X
+      this.velocity.x = 0;
     }
 
     const nextZ = this.position.z + this.velocity.z * dt;
@@ -170,18 +214,54 @@ export class Player {
       this.velocity.z = 0;
     }
 
+    // Animation de marche
+    const speedMag = Math.hypot(this.velocity.x, this.velocity.z);
+    this.moving = speedMag > 0.3;
+    if (this.moving) {
+      this.walkPhase += dt * (running ? 10 : 6);
+    } else {
+      this.walkPhase *= 0.85;
+    }
+    this._animateCharacter();
+
+    // Orientation du personnage = yaw
+    if (this.character) {
+      this.character.position.copy(this.position);
+      this.character.rotation.y = this.yaw + Math.PI; // face à la caméra derrière? ajuster
+    }
+
     this._syncCamera();
   }
 
-  /** Applique position + orientation à la caméra */
-  _syncCamera() {
-    this.camera.position.set(this.position.x, this.position.y + EYE_HEIGHT, this.position.z);
-    // Ordre YXZ : d'abord le lacet (yaw), puis le tangage (pitch)
-    this.camera.rotation.order = 'YXZ';
-    this.camera.rotation.set(this.pitch, this.yaw, 0);
+  _animateCharacter() {
+    if (!this.character) return;
+    const { leftLegPivot, rightLegPivot } = this.character.userData;
+    const amp = this.moving ? 0.6 : 0;
+    leftLegPivot.rotation.x = Math.sin(this.walkPhase) * amp;
+    rightLegPivot.rotation.x = Math.sin(this.walkPhase + Math.PI) * amp;
   }
 
-  /** Distance horizontale jusqu'un point donné */
+  _syncCamera(force = false) {
+    // Position désirée de la caméra (derrière le personnage)
+    const sin = Math.sin(this.yaw);
+    const cos = Math.cos(this.yaw);
+    const desiredX = this.position.x + sin * CAM_DISTANCE;
+    const desiredZ = this.position.z + cos * CAM_DISTANCE;
+    const desiredY = this.position.y + CAM_HEIGHT + Math.sin(this.pitch) * 1.5;
+
+    if (force || this.camPos.lengthSq() === 0) {
+      this.camPos.set(desiredX, desiredY, desiredZ);
+    } else {
+      const factor = 1 - Math.exp(-CAM_LERP * 0.016);
+      this.camPos.x += (desiredX - this.camPos.x) * factor;
+      this.camPos.y += (desiredY - this.camPos.y) * factor;
+      this.camPos.z += (desiredZ - this.camPos.z) * factor;
+    }
+
+    this.camera.position.copy(this.camPos);
+    this.camera.lookAt(this.position.x, this.position.y + 1.2, this.position.z);
+  }
+
   distanceTo(point) {
     const dx = this.position.x - point.x;
     const dz = this.position.z - point.z;
@@ -194,5 +274,6 @@ export class Player {
     document.removeEventListener('keyup', this._onKeyUp);
     document.removeEventListener('pointerlockchange', this._onLockChange);
     document.removeEventListener('pointerlockerror', this._onLockError);
+    if (this.character && this.scene) this.scene.remove(this.character);
   }
 }

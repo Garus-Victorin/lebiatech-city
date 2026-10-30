@@ -36,7 +36,7 @@ const world = createWorld(scene);
 const ui = createUI();
 
 /* ------------------------------ Joueur ------------------------------ */
-const player = new Player(camera, renderer.domElement, world.colliders, world.startPoint);
+const player = new Player(camera, renderer.domElement, world.colliders, world.startPoint, scene);
 
 /* ------------------------------ Mission ------------------------------ */
 // machine à états simple du jeu
