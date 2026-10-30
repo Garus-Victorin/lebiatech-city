@@ -56,11 +56,10 @@ export function createUI() {
   /** Écran d'accueil (bouton = lancer la partie + pointer lock) */
   function showStart(onStart) {
     showScreen(`
-      <div class="title">Inside Job</div>
+      <div class="title">Lebiatech City</div>
       <div class="subtitle">
-        Un dossier sensible a été caché dans l'un des bureaux du plateau.
-        Retrouve-le et reviens au point de départ avant la fin des
-        <strong>90 secondes</strong>.
+        Explore le bureau LEBIATECH et la ville de Cotonou.
+        Parle aux habitants, découvre les lieux.
       </div>
       <div class="keys">
         <kbd>Z</kbd><kbd>Q</kbd><kbd>S</kbd><kbd>D</kbd> ou <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> se déplacer
