@@ -12,9 +12,9 @@ import * as THREE from 'three';
 import './style.css';
 import { createWorld } from './world.js';
 import { Player } from './player.js';
-import { Mission } from './mission.js';
 import { createUI } from './ui.js';
 import { createMinimap } from './minimap.js';
+import { NPCManager } from './npcs.js';
 
 /* ------------------------------ Renderer ------------------------------ */
 const container = document.getElementById('game');
@@ -39,42 +39,27 @@ const ui = createUI();
 /* ------------------------------ Joueur ------------------------------ */
 const player = new Player(camera, renderer.domElement, world.colliders, world.startPoint, scene);
 
-/* ------------------------------ Mission ------------------------------ */
-// machine à états simple du jeu
-let phase = 'menu'; // 'menu' | 'playing' | 'paused' | 'ended'
+/* ------------------------------ PNJ ------------------------------ */
+const npcManager = new NPCManager(scene);
 
-const mission = new Mission({
-  scene,
-  spots: world.objectiveSpots,
-  startPoint: world.startPoint,
-  ui,
-  player,
-  onEnd: (won) => {
-    phase = 'ended';
-    player.enabled = false;
-    player.exitLock();
-    ui.showEnd(won, mission.timeLeft, restartGame);
-  },
-});
-
-const minimap = createMinimap(player, mission, world);
+const minimap = createMinimap(player, world);
 
 /* =========================================================================
    Gestion des écrans / pointer lock
    ========================================================================= */
 
+let phase = 'menu'; // 'menu' | 'playing' | 'paused'
+
 function startGame() {
-  mission.start();
   phase = 'playing';
   player.enabled = true;
   player.reset();
   ui.hideScreen();
+  if (document.activeElement) document.activeElement.blur();
   player.requestLock();
 }
 
 function restartGame() {
-  // "Rejouer" : on repart directement dans une nouvelle partie
-  mission.restart();
   startGame();
 }
 
@@ -100,7 +85,26 @@ renderer.domElement.addEventListener('click', () => {
   if (phase === 'paused') resumeGame();
 });
 
-// Écran de démarrage
+const interactEl = document.getElementById('interact');
+
+let currentNPC = null;
+
+document.addEventListener('keydown', (e) => {
+  if (e.code === 'KeyE' && phase === 'playing' && currentNPC) {
+    const toast = document.getElementById('toast');
+    if (toast) {
+      toast.textContent = currentNPC.dialogue;
+      toast.classList.remove('hidden');
+      void toast.offsetWidth;
+      toast.classList.add('visible');
+      setTimeout(() => {
+        toast.classList.remove('visible');
+        setTimeout(() => toast.classList.add('hidden'), 260);
+      }, 3000);
+    }
+  }
+});
+
 ui.showStart(startGame);
 
 /* =========================================================================
@@ -114,8 +118,31 @@ function animate() {
   const dt = Math.min(clock.getDelta(), 0.05);
 
   player.update(dt);
-  mission.update(dt);
+  npcManager.update(dt);
+
+  // Prompt d'interaction
+  if (phase === 'playing') {
+    currentNPC = npcManager.nearest(player.position, 2.5);
+    if (currentNPC) {
+      interactEl.textContent = 'E — Parler';
+      interactEl.classList.remove('hidden');
+    } else {
+      interactEl.classList.add('hidden');
+    }
+  } else {
+    interactEl.classList.add('hidden');
+  }
+
   minimap.draw();
+
+  // Info caméra
+  const camInfo = document.getElementById('cam-info');
+  if (camInfo && player.enabled) {
+    camInfo.textContent = `Caméra : ${player.camDistance.toFixed(1)}m (molette / C)`;
+    camInfo.classList.remove('hidden');
+  } else if (camInfo) {
+    camInfo.classList.add('hidden');
+  }
 
   renderer.render(scene, camera);
 }

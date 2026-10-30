@@ -5,7 +5,7 @@
    objectif (blip) et position/orientation du joueur.
    ========================================================================= */
 
-export function createMinimap(player, mission, world) {
+export function createMinimap(player, world) {
   const canvas = document.getElementById('minimap');
   if (!canvas) return { draw() {} };
   const ctx = canvas.getContext('2d');
@@ -72,26 +72,6 @@ export function createMinimap(player, mission, world) {
     ctx.beginPath();
     ctx.arc(toX(sp.x), toY(sp.z), 3.5, 0, Math.PI * 2);
     ctx.fill();
-
-    // Objectif (blip doré) tant que non ramassé
-    if (!mission.collected && mission.objectMesh && mission.objectMesh.visible) {
-      const op = mission.objectMesh.position;
-      // halo
-      ctx.fillStyle = 'rgba(255, 204, 51, 0.35)';
-      ctx.beginPath();
-      ctx.arc(toX(op.x), toY(op.z), 8, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = '#ffcc33';
-      ctx.beginPath();
-      ctx.arc(toX(op.x), toY(op.z), 4, 0, Math.PI * 2);
-      ctx.fill();
-    } else if (mission.collected) {
-      // objectif = retour au départ : blip pulsé sur le départ
-      ctx.fillStyle = 'rgba(125, 255, 176, 0.9)';
-      ctx.beginPath();
-      ctx.arc(toX(sp.x), toY(sp.z), 5, 0, Math.PI * 2);
-      ctx.fill();
-    }
 
     // Joueur (triangle orienté)
     const p = player.position;
