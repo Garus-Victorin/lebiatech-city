@@ -50,8 +50,16 @@ export class Player {
     this.moving = false;
 
     this._onMouseMove = (e) => this._handleMouseMove(e);
+    this._onWheel = (e) => {
+      this.camDistance = Math.max(2, Math.min(12, this.camDistance + e.deltaY * 0.01));
+    };
     this._onKeyDown = (e) => {
       this.keys.add(e.code);
+      if (e.code === 'KeyC') {
+        if (this.camDistance < 4) this.camDistance = 5.0;
+        else if (this.camDistance < 7) this.camDistance = 8.0;
+        else this.camDistance = 3.0;
+      }
       if (['Space', 'ArrowUp', 'ArrowDown'].includes(e.code)) e.preventDefault();
     };
     this._onKeyUp = (e) => this.keys.delete(e.code);
@@ -64,17 +72,20 @@ export class Player {
       if (this.onLockChange) this.onLockChange(false);
     };
 
+    document.addEventListener('wheel', this._onWheel, { passive: true });
     document.addEventListener('mousemove', this._onMouseMove);
     document.addEventListener('keydown', this._onKeyDown);
     document.addEventListener('keyup', this._onKeyUp);
     document.addEventListener('pointerlockchange', this._onLockChange);
     document.addEventListener('pointerlockerror', this._onLockError);
 
+  // Caméra 3e personne (distance réglable)
+  this.camDistance = 5.0;
+  this.camHeight = 2.6;
+  this.camLerp = 12;
     // Caméra lissée
     this.camPos = new THREE.Vector3();
     this._syncCamera(true);
-
-    this.reset();
   }
 
   _buildCharacter() {
@@ -245,14 +256,14 @@ export class Player {
     // Position désirée de la caméra (derrière le personnage)
     const sin = Math.sin(this.yaw);
     const cos = Math.cos(this.yaw);
-    const desiredX = this.position.x + sin * CAM_DISTANCE;
-    const desiredZ = this.position.z + cos * CAM_DISTANCE;
-    const desiredY = this.position.y + CAM_HEIGHT + Math.sin(this.pitch) * 1.5;
+    const desiredX = this.position.x + sin * this.camDistance;
+    const desiredZ = this.position.z + cos * this.camDistance;
+    const desiredY = this.position.y + this.camHeight + Math.sin(this.pitch) * 1.5;
 
     if (force || this.camPos.lengthSq() === 0) {
       this.camPos.set(desiredX, desiredY, desiredZ);
     } else {
-      const factor = 1 - Math.exp(-CAM_LERP * 0.016);
+      const factor = 1 - Math.exp(-this.camLerp * 0.016);
       this.camPos.x += (desiredX - this.camPos.x) * factor;
       this.camPos.y += (desiredY - this.camPos.y) * factor;
       this.camPos.z += (desiredZ - this.camPos.z) * factor;
@@ -270,6 +281,7 @@ export class Player {
 
   dispose() {
     document.removeEventListener('mousemove', this._onMouseMove);
+    document.removeEventListener('wheel', this._onWheel);
     document.removeEventListener('keydown', this._onKeyDown);
     document.removeEventListener('keyup', this._onKeyUp);
     document.removeEventListener('pointerlockchange', this._onLockChange);
